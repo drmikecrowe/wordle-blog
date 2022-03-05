@@ -1,4 +1,6 @@
 import debug from "debug";
+import { writeFileSync } from "fs";
+import ProgressBar from "progress";
 import { words as wordList } from "./words";
 
 const log_verbose = debug("words:verbose");
@@ -63,10 +65,11 @@ class Letter {
   }
 
   static Available(letters: string[] = []): string[] {
-    const res = Letter.letters
+    const all = Letter.letters
       .slice(0, 15)
       .reduce((acc: string[], cur) => acc.concat(cur.words.filter((word) => in_common(word, Letter.bestLetters) === 5)), [])
       .filter((word) => in_common(letters, word) === 0);
+    const res = [...new Set(all)];
     log_avail(`For ${letters.join(",")} we found ${res.length} words`);
     return res;
   }
@@ -81,30 +84,35 @@ for (const word of Object.keys(wordList)) {
 }
 Letter.Process();
 
-const buildCombinations = (results: Record<string, string[]>): string[][] => {
-  const word1entries = [...Letter.Available().entries()];
+const keyToRank = (parts: string[]): number => Letter.Rank(parts[0]) + Letter.Rank(parts[1]) * 0.75;
+
+const buildCombinations = (results: string[]): string[] => {
+  const word1entries = [...Letter.Available(Letter.bestLetters.slice(8)).entries()];
+  const bar = new ProgressBar(":percent complete [:bar] :etas (:total found)", { total: word1entries.length });
   for (const [i1, word1] of word1entries) {
     const word2entries = [...Letter.Available(l(word1)).entries()];
     for (const [i2, word2] of word2entries) {
       const word3entries = [...Letter.Available(l(word1 + word2)).entries()];
       for (const [i3, word3] of word3entries) {
         const result = [word1, word2, word3];
-        const key = result.join("");
-        if (!results[key]) {
-          log(`Added ${result.join(",")}`);
-          results[key] = result;
-        }
-        log(`${i1} of ${word1entries.length} -- ${i2} of ${word2entries.length} -- ${i3} of ${word3entries.length}`);
+        const key = result.join(",");
+        if (results.includes(key)) continue;
+        results.push(key);
+        if (results.length > 10) results.pop();
+        results.sort((a, b) => keyToRank(a.split(",")) - keyToRank(b.split(",")));
+        bar.tick(i1, {
+          total: results.length,
+        });
+        writeFileSync("./all.json", JSON.stringify(results, null, 4));
       }
     }
   }
-  return Object.values(results);
+  return results;
 };
 
 switch (process.argv.pop()) {
-  case "unique":
-  default: {
-    const possible = buildCombinations({});
+  case "unique": {
+    const possible = buildCombinations([]);
     console.log(possible.length, possible.slice(0, 10));
   }
 }
