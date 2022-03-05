@@ -1,3 +1,6 @@
+# How Can I Wordle Out of This?
+## or
+
 # Objectives
 
 1.  Identify the 15 most common letters in the list
@@ -29,3 +32,9 @@
     * s: 0
     * e: 1
     * total: 105
+
+* Find potential words recursively
+  * Start with all words from the letter `s`
+  * Find all words in letter `e`, then `a` that don't have an `s` in them
+  * Recurse finding all words that have unique letters and use all 15 of the best letters
+  
