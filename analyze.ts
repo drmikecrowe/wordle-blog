@@ -6,7 +6,6 @@ import { Letter, toL as toLetterAry } from "./letter";
 import { words as masterWordList } from "./words";
 
 const ALL_LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
-const RIGHT_POS_RANK = 0.3;
 
 const log_verbose = debug("letters:verbose");
 const log_rank = debug("letters:rank");
@@ -34,14 +33,15 @@ function DetailRank(word: string, offset: number): { rank: number; detail: any }
   let rank = 0;
   for (const [pos, letter] of letters.entries()) {
     detail[`W${offset}L${pos}-Rank`] = allLetters[letter].rank;
-    rank += allLetters[letter].rank;
+    let r = allLetters[letter].rank;
     if (pos === allLetters[letter].bestPosition) {
-      rank += RIGHT_POS_RANK;
-      detail[`W${offset}L${pos}-Pos`] = RIGHT_POS_RANK;
+      detail[`W${offset}L${pos}-Pos`] = r;
+      r *= 2;
       posHits++;
     } else {
       detail[`W${offset}L${pos}-Pos`] = 0;
     }
+    rank += r;
   }
   detail[`W${offset}-posHits`] = posHits;
   log_rank(`${word} has rank ${rank}`);
@@ -112,7 +112,7 @@ export function buildCombinations(): string[] {
 
   const keyToRank = (words: string[]): number => Rank(words[0]) + Rank(words[1]) + Rank(words[2]);
 
-  const word1entries = [...Available(bestLetters.slice(8)).entries()];
+  const word1entries = [...Available().entries()]; // bestLetters.slice(8)
 
   const bar = new ProgressBar(":percent complete [:bar] :show :etas (:total total)", { total: word1entries.length });
 
@@ -120,7 +120,7 @@ export function buildCombinations(): string[] {
     const word2entries = [...Available(toLetterAry(word1)).entries()];
     for (const [i2, word2] of word2entries) {
       for (const word3 of [...Available(toLetterAry(word1 + word2))]) {
-        const words = [word1, word2, word3].sort((a, b) => Rank(b) - Rank(a));
+        const words = [word1, word2, word3];
         const key = words.join(",");
 
         const { rank: word1rank, detail: detail1 } = DetailRank(word1, 1);
@@ -136,7 +136,7 @@ export function buildCombinations(): string[] {
           word3,
           word3rank,
           ...detail3,
-          combRank: word1rank + word2rank + word3rank,
+          combRank: word1rank * 0.6 + word2rank * 0.3 + word3rank * 0.1,
           posHits: detail1["W1-posHits"] + detail2["W2-posHits"] + detail3["W3-posHits"],
         };
         details.push(detail);
