@@ -1,118 +1,168 @@
 import debug from "debug";
 import { writeFileSync } from "fs";
 import ProgressBar from "progress";
+
+import { Letter, toL } from "./letter";
 import { words as wordList } from "./words";
 
-const log_verbose = debug("words:verbose");
-const log_rank = debug("words:rank");
-const log_avail = debug("words:avail");
+const ALL_LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
+const RIGHT_POS_RANK = 0.3;
+
+const log_verbose = debug("letters:verbose");
+const log_rank = debug("letters:rank");
+const log_avail = debug("letters:avail");
 const log = debug("words");
 
-const l = (a: string | string[]): string[] => [...new Set(Array.isArray(a) ? a : a.split(""))];
-const in_common = (a: string | string[], b: string | string[]): number => l(a).filter((x) => l(b).includes(x)).length;
+const letterList: Letter[] = [];
+let sortedLetters: string[] = [];
+let bestLetters: string[] = [];
 
-class Letter {
-  letter: string;
-  words: string[];
-  rank: number;
+const positions: Record<string, number[]> = {};
+const correctPosition: Record<string, number> = {};
+const occurrences: Record<string, number> = {};
+const letterRank: Record<string, number> = {};
+const wordRanks: Record<string, number> = {};
 
-  static letters: Letter[] = [];
-  static sortedLetters: string[] = [];
-  static bestLetters: string[] = [];
+let totalLetters = 0;
 
-  constructor(letter: string, word: string) {
-    this.letter = letter;
-    this.words = [word];
-    this.rank = 1;
+for (const letter of ALL_LETTERS) {
+  positions[letter] = [0, 0, 0, 0, 0];
+  correctPosition[letter] = 0;
+  letterRank[letter] = 0;
+  occurrences[letter] = 0;
+}
+
+function Add(word: string) {
+  const ltrs = toL(word);
+
+  // For stats, use all words
+  for (const [i, letter] of toL(word).entries()) {
+    positions[letter][i]++;
+    occurrences[letter]++;
+    totalLetters++;
   }
 
-  newWord(word: string) {
-    this.words.push(word);
-    this.rank++;
-  }
+  // Don't bother words with duplicate letters
+  if (ltrs.length < 5) return;
 
-  static Add(letter: string, word: string): Letter {
-    let l = Letter.letters.filter((l) => l.letter === letter).shift();
-    if (l) {
-      l.newWord(word);
+  for (const letter of ltrs) {
+    let ltr = letterList.find((l) => l.letter === letter);
+    if (!ltr) {
+      ltr = new Letter(letter, word);
+      letterList.push(ltr);
+    }
+    ltr.newWord(word);
+  }
+}
+
+function DetailRank(word: string, offset: number): { rank: number; detail: any } {
+  const detail: any = {};
+  const letters = toL(word);
+  let posHits = 0;
+  let rank = 0;
+  for (const [pos, letter] of letters.entries()) {
+    detail[`W${offset}L${pos}-Rank`] = letterRank[letter];
+    rank += letterRank[letter];
+    if (pos === correctPosition[letter]) {
+      rank += RIGHT_POS_RANK;
+      detail[`W${offset}L${pos}-Pos`] = RIGHT_POS_RANK;
+      posHits++;
     } else {
-      l = new Letter(letter, word);
-      Letter.letters.push(l);
+      detail[`W${offset}L${pos}-Pos`] = 0;
     }
-    return l;
   }
-
-  static Process(): void {
-    Letter.letters.sort((a, b) => b.rank - a.rank);
-    Letter.sortedLetters = Letter.letters.map((l) => l.letter);
-    log_verbose(`${Letter.letters.length} sorted`);
-    Letter.bestLetters = Letter.sortedLetters.slice(0, 15);
-    log_verbose(`Best letters: ${Letter.bestLetters.join(",")}`);
-    log_verbose(Letter.bestLetters.map((letter, i) => `* ${letter} - ${i}`).join("\n"));
-  }
-
-  static Rank(word: string): number {
-    const letters = l(word);
-    let rank = 0 + 50 * (5 - letters.length);
-    for (const letter of letters) {
-      let i = Letter.bestLetters.indexOf(letter);
-      if (i === -1) i = 100;
-      log_rank(`${letter}: ${i}`);
-      rank += i;
-    }
-    log_rank(`${word} has rank ${rank}`);
-    return rank;
-  }
-
-  static Available(letters: string[] = []): string[] {
-    const all = Letter.letters
-      .slice(0, 15)
-      .reduce((acc: string[], cur) => acc.concat(cur.words.filter((word) => in_common(word, Letter.bestLetters) === 5)), [])
-      .filter((word) => in_common(letters, word) === 0);
-    const res = [...new Set(all)];
-    log_avail(`For ${letters.join(",")} we found ${res.length} words`);
-    return res;
-  }
+  detail[`W${offset}-posHits`] = posHits;
+  log_rank(`${word} has rank ${rank}`);
+  return { rank, detail };
 }
 
-for (const word of Object.keys(wordList)) {
-  const letters = l(word);
-  if (letters.length < 5) continue; // Don't allow words with duplicate letters
-  for (const letter of letters) {
-    Letter.Add(letter, word);
-  }
+function Rank(word: string): number {
+  if (wordRanks[word]) return wordRanks[word];
+  const { rank } = DetailRank(word, 0);
+  wordRanks[word] = rank;
+  return rank;
 }
-Letter.Process();
 
-const keyToRank = (parts: string[]): number => Letter.Rank(parts[0]) + Letter.Rank(parts[1]) * 0.75;
+export function Process(): void {
+  for (const word of Object.keys(wordList)) {
+    Add(word);
+  }
+  for (const letter of ALL_LETTERS) {
+    letterRank[letter] = occurrences[letter] / totalLetters;
+  }
 
-const buildCombinations = (results: string[]): string[] => {
-  const word1entries = [...Letter.Available(Letter.bestLetters.slice(8)).entries()];
-  const bar = new ProgressBar(":percent complete [:bar] :etas (:total found)", { total: word1entries.length });
-  for (const [i1, word1] of word1entries) {
-    const word2entries = [...Letter.Available(l(word1)).entries()];
+  letterList.sort((a, b) => b.words.length - a.words.length);
+  sortedLetters = letterList.map((l) => l.letter);
+  log_verbose(`${letterList.length} sorted`);
+
+  bestLetters = sortedLetters.slice(0, 15);
+  bestLetters.forEach(
+    (letter) => (correctPosition[letter] = positions[letter].indexOf([...positions[letter]].sort((a, b) => b - a)[0])),
+  );
+
+  log_verbose(`Best letters: ${bestLetters.join(",")}`);
+  log_verbose(bestLetters.map((letter, i) => `* ${letter} - ${i + 1}, pos: ${correctPosition[letter] + 1}`).join("\n"));
+}
+
+export function Available(letters: string[] = []): string[] {
+  const in_common = (a: string | string[], b: string | string[]): number => toL(a).filter((x) => toL(b).includes(x)).length;
+
+  const all = letterList
+    .slice(0, 15)
+    .reduce((acc: string[], cur) => acc.concat(cur.words.filter((word) => in_common(word, bestLetters) === 5)), [])
+    .filter((word) => in_common(letters, word) === 0);
+  const res = [...new Set(all)];
+  log_avail(`For ${letters.join(",")} we found ${res.length} words`);
+  return res;
+}
+
+export function buildCombinations(): string[] {
+  const results: string[] = [];
+  const details: any[] = [];
+
+  const keyToRank = (parts: string[]): number => Rank(parts[0]) + Rank(parts[1]) + Rank(parts[2]);
+
+  const word1entries = [...Available(bestLetters.slice(8)).entries()];
+
+  const bar = new ProgressBar(":percent complete [:bar] :show :etas (:total total)", { total: word1entries.length });
+
+  for (const [_, word1] of word1entries) {
+    const word2entries = [...Available(toL(word1)).entries()];
     for (const [i2, word2] of word2entries) {
-      const word3entries = [...Letter.Available(l(word1 + word2)).entries()];
-      for (const [i3, word3] of word3entries) {
-        const result = [word1, word2, word3];
+      for (const word3 of [...Available(toL(word1 + word2))]) {
+        const result = [word1, word2, word3].sort((a, b) => Rank(b) - Rank(a));
         const key = result.join(",");
+
+        const { rank: word1rank, detail: detail1 } = DetailRank(word1, 1);
+        const { rank: word2rank, detail: detail2 } = DetailRank(word2, 2);
+        const { rank: word3rank, detail: detail3 } = DetailRank(word3, 3);
+        const detail = {
+          word1,
+          word1rank,
+          ...detail1,
+          word2,
+          word2rank,
+          ...detail2,
+          word3,
+          word3rank,
+          ...detail3,
+          combRank: word1rank + word2rank + word3rank,
+          posHits: detail1["W1-posHits"] + detail2["W2-posHits"] + detail3["W3-posHits"],
+        };
+        details.push(detail);
         if (results.includes(key)) continue;
-        results.push(key);
+        results.push(`${key}: rank=${detail.combRank.toFixed(1)}, posHits=${detail.posHits}`);
         if (results.length > 10) results.pop();
         results.sort((a, b) => keyToRank(a.split(",")) - keyToRank(b.split(",")));
-        bar.tick(i1, {
+        bar.tick(0, {
           total: results.length,
+          show: `${i2}/${word2entries.length} 2nd`,
         });
         writeFileSync("./all.json", JSON.stringify(results, null, 4));
+        writeFileSync("./details.json", JSON.stringify(details, null, 4));
       }
     }
+    bar.tick();
   }
   return results;
-};
-
-switch (process.argv.pop()) {
-  case "unique": {
-    const possible = buildCombinations([]);
-    console.log(possible.length, possible.slice(0, 10));
-  }
 }

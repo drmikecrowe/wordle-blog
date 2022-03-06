@@ -1,6 +1,3 @@
-# How Can I Wordle Out of Real Work?
-## or 
-
 # Objectives
 
 1.  Identify the 15 most common letters in the list
