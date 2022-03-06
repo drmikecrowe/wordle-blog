@@ -116,11 +116,19 @@ export function Available(letters: string[] = []): string[] {
   return res;
 }
 
+interface Results {
+  words: string[];
+  rank: number;
+  posHits: number;
+  output: string;
+}
+
 export function buildCombinations(): string[] {
-  const results: string[] = [];
+  const keys: string[] = [];
+  const results: Results[] = [];
   const details: any[] = [];
 
-  const keyToRank = (parts: string[]): number => Rank(parts[0]) + Rank(parts[1]) + Rank(parts[2]);
+  const keyToRank = (words: string[]): number => Rank(words[0]) + Rank(words[1]) + Rank(words[2]);
 
   const word1entries = [...Available(bestLetters.slice(8)).entries()];
 
@@ -130,8 +138,8 @@ export function buildCombinations(): string[] {
     const word2entries = [...Available(toL(word1)).entries()];
     for (const [i2, word2] of word2entries) {
       for (const word3 of [...Available(toL(word1 + word2))]) {
-        const result = [word1, word2, word3].sort((a, b) => Rank(b) - Rank(a));
-        const key = result.join(",");
+        const words = [word1, word2, word3].sort((a, b) => Rank(b) - Rank(a));
+        const key = words.join(",");
 
         const { rank: word1rank, detail: detail1 } = DetailRank(word1, 1);
         const { rank: word2rank, detail: detail2 } = DetailRank(word2, 2);
@@ -150,19 +158,32 @@ export function buildCombinations(): string[] {
           posHits: detail1["W1-posHits"] + detail2["W2-posHits"] + detail3["W3-posHits"],
         };
         details.push(detail);
-        if (results.includes(key)) continue;
-        results.push(`${key}: rank=${detail.combRank.toFixed(1)}, posHits=${detail.posHits}`);
-        if (results.length > 10) results.pop();
-        results.sort((a, b) => keyToRank(a.split(",")) - keyToRank(b.split(",")));
+        if (keys.includes(key)) continue;
+        const result: Results = {
+          words,
+          rank: detail.combRank,
+          posHits: detail.posHits,
+          output: `${key}: rank=${detail.combRank.toFixed(1)}, posHits=${detail.posHits}`,
+        };
+        let found = false;
+        const myRank = keyToRank(words);
+        for (let [i, existing] of results.entries()) {
+          if (myRank > existing.rank) {
+            results.splice(i, 0, result);
+            found = true;
+            break;
+          }
+        }
+        if (!found) results.push(result);
         bar.tick(0, {
           total: results.length,
           show: `${i2}/${word2entries.length} 2nd`,
         });
-        writeFileSync("./all.json", JSON.stringify(results, null, 4));
+        writeFileSync("./all.json", JSON.stringify(results.map((r) => r.output).slice(0, 10), null, 4));
         writeFileSync("./details.json", JSON.stringify(details, null, 4));
       }
     }
     bar.tick();
   }
-  return results;
+  return results.map((r) => r.output).slice(0, 10);
 }
