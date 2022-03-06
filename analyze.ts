@@ -2,8 +2,8 @@ import debug from "debug";
 import { writeFileSync } from "fs";
 import ProgressBar from "progress";
 
-import { Letter, toL } from "./letter";
-import { words as wordList } from "./words";
+import { Letter, toL as toLetterAry } from "./letter";
+import { words as masterWordList } from "./words";
 
 const ALL_LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
 const RIGHT_POS_RANK = 0.3;
@@ -13,57 +13,29 @@ const log_rank = debug("letters:rank");
 const log_avail = debug("letters:avail");
 const log = debug("words");
 
-const letterList: Letter[] = [];
+const allLetters: Record<string, Letter> = ALL_LETTERS.reduce((acc: any, letter: string) => {
+  acc[letter] = new Letter(letter);
+  return acc;
+}, {});
+const letterList: Letter[] = Object.values(allLetters);
+const wordList = Object.keys(masterWordList);
+
 let sortedLetters: string[] = [];
 let bestLetters: string[] = [];
 
-const positions: Record<string, number[]> = {};
-const correctPosition: Record<string, number> = {};
-const occurrences: Record<string, number> = {};
-const letterRank: Record<string, number> = {};
 const wordRanks: Record<string, number> = {};
 
-let totalLetters = 0;
-
-for (const letter of ALL_LETTERS) {
-  positions[letter] = [0, 0, 0, 0, 0];
-  correctPosition[letter] = 0;
-  letterRank[letter] = 0;
-  occurrences[letter] = 0;
-}
-
-function Add(word: string) {
-  const ltrs = toL(word);
-
-  // For stats, use all words
-  for (const [i, letter] of toL(word).entries()) {
-    positions[letter][i]++;
-    occurrences[letter]++;
-    totalLetters++;
-  }
-
-  // Don't bother words with duplicate letters
-  if (ltrs.length < 5) return;
-
-  for (const letter of ltrs) {
-    let ltr = letterList.find((l) => l.letter === letter);
-    if (!ltr) {
-      ltr = new Letter(letter, word);
-      letterList.push(ltr);
-    }
-    ltr.newWord(word);
-  }
-}
+const totalLetters = wordList.length * 5;
 
 function DetailRank(word: string, offset: number): { rank: number; detail: any } {
   const detail: any = {};
-  const letters = toL(word);
+  const letters = toLetterAry(word);
   let posHits = 0;
   let rank = 0;
   for (const [pos, letter] of letters.entries()) {
-    detail[`W${offset}L${pos}-Rank`] = letterRank[letter];
-    rank += letterRank[letter];
-    if (pos === correctPosition[letter]) {
+    detail[`W${offset}L${pos}-Rank`] = allLetters[letter].rank;
+    rank += allLetters[letter].rank;
+    if (pos === allLetters[letter].bestPosition) {
       rank += RIGHT_POS_RANK;
       detail[`W${offset}L${pos}-Pos`] = RIGHT_POS_RANK;
       posHits++;
@@ -84,28 +56,38 @@ function Rank(word: string): number {
 }
 
 export function Process(): void {
-  for (const word of Object.keys(wordList)) {
-    Add(word);
-  }
-  for (const letter of ALL_LETTERS) {
-    letterRank[letter] = occurrences[letter] / totalLetters;
-  }
+  wordList.forEach((word) => {
+    const letters = toLetterAry(word);
 
-  letterList.sort((a, b) => b.words.length - a.words.length);
+    letters.forEach((letter, i) => {
+      // For stats, use all words
+      allLetters[letter].bumpPosition(i);
+
+      // Don't bother with words that have duplicate letters
+      if (letters.length === 5) allLetters[letter].addWord(word);
+    });
+  });
+  ALL_LETTERS.forEach((letter) => {
+    allLetters[letter].rank = allLetters[letter].occurrences / totalLetters;
+  });
+
+  letterList.sort((a, b) => b.rank - a.rank);
   sortedLetters = letterList.map((l) => l.letter);
-  log_verbose(`${letterList.length} sorted`);
-
   bestLetters = sortedLetters.slice(0, 15);
-  bestLetters.forEach(
-    (letter) => (correctPosition[letter] = positions[letter].indexOf([...positions[letter]].sort((a, b) => b - a)[0])),
-  );
-
   log_verbose(`Best letters: ${bestLetters.join(",")}`);
-  log_verbose(bestLetters.map((letter, i) => `* ${letter} - ${i + 1}, pos: ${correctPosition[letter] + 1}`).join("\n"));
+  log_verbose(
+    bestLetters
+      .map(
+        (letter, i) =>
+          `${letter} - ${i + 1}: rank=${(100 * allLetters[letter].rank).toFixed(1)}%, pos=${allLetters[letter].bestPosition + 1}`,
+      )
+      .join("\n"),
+  );
 }
 
 export function Available(letters: string[] = []): string[] {
-  const in_common = (a: string | string[], b: string | string[]): number => toL(a).filter((x) => toL(b).includes(x)).length;
+  const in_common = (a: string | string[], b: string | string[]): number =>
+    toLetterAry(a).filter((x) => toLetterAry(b).includes(x)).length;
 
   const all = letterList
     .slice(0, 15)
@@ -135,9 +117,9 @@ export function buildCombinations(): string[] {
   const bar = new ProgressBar(":percent complete [:bar] :show :etas (:total total)", { total: word1entries.length });
 
   for (const [_, word1] of word1entries) {
-    const word2entries = [...Available(toL(word1)).entries()];
+    const word2entries = [...Available(toLetterAry(word1)).entries()];
     for (const [i2, word2] of word2entries) {
-      for (const word3 of [...Available(toL(word1 + word2))]) {
+      for (const word3 of [...Available(toLetterAry(word1 + word2))]) {
         const words = [word1, word2, word3].sort((a, b) => Rank(b) - Rank(a));
         const key = words.join(",");
 
