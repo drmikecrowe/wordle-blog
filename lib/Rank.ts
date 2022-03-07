@@ -1,8 +1,6 @@
 import { toL as toLetterAry } from "./letter";
 import { letterMap, log_rank, wordRanks } from "./BuildCombinations";
 
-import { position } from "../weights.json";
-
 export function PositionHits(word: string): number {
   let hits = 0;
   for (const [pos, letter] of toLetterAry(word).entries()) {
@@ -17,11 +15,12 @@ export function DetailRank(word: string, offset: number): { rank: number; detail
   let posHits = 0;
   let rank = 0;
   for (const [pos, letter] of letters.entries()) {
-    detail[`W${offset}L${pos}-Rank`] = letterMap[letter].rank;
-    let r = letterMap[letter].rank;
-    if (pos === letterMap[letter].bestPosition) {
-      detail[`W${offset}L${pos}-Pos`] = r;
-      r *= position;
+    const lm = letterMap[letter];
+    detail[`W${offset}L${pos}-Rank`] = lm.rank;
+    let r = lm.rank;
+    r += lm.positionWeight[pos];
+    r += lm.vowelWeight;
+    if (pos === lm.bestPosition) {
       posHits++;
     } else {
       detail[`W${offset}L${pos}-Pos`] = 0;
