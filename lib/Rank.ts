@@ -18,8 +18,8 @@ export function DetailRank(word: string, offset: number): { rank: number; detail
     const lm = letterMap[letter];
     detail[`W${offset}L${pos}-Rank`] = lm.rank;
     let r = lm.rank;
-    r += lm.positionWeight[pos];
-    r += lm.vowelWeight;
+    r += lm.rank * lm.positionWeight[pos];
+    r += lm.rank * lm.vowelWeight;
     if (pos === lm.bestPosition) {
       posHits++;
     } else {

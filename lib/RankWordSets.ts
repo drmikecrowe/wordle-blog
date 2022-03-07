@@ -97,6 +97,7 @@ export function RankWordSets(bestWordCombinations: string[][]): string[] {
       output: `${key}: ${outputs.join(", ")}`,
     };
     let found = false;
+    const limit = Math.max(result.rank, results.length > 0 ? results[0].rank : 0) - 0.02;
     for (const [i, existing] of results.entries()) {
       if (combRank > existing.rank) {
         results.splice(i, 0, result);
@@ -104,9 +105,18 @@ export function RankWordSets(bestWordCombinations: string[][]): string[] {
         break;
       }
     }
-    if (results.length > 100) results.pop();
     if (!found) results.push(result);
-    writeFileSync("./all.json", JSON.stringify(results.map((r) => r.output).slice(0, 10), null, 4));
+    for (let i = results.length - 1; i >= 0; i--) {
+      if (results[i].rank < limit) results.pop();
+    }
+    writeFileSync(
+      "./all.json",
+      JSON.stringify(
+        results.map((r) => r.output),
+        null,
+        4,
+      ),
+    );
 
     bar.tick();
   }
