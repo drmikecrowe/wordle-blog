@@ -3,6 +3,7 @@ export const toL = (a: string | string[]): string[] => [...new Set(Array.isArray
 export class Letter {
   letter: string;
   words: string[] = [];
+  bestWords: string[] = [];
   occurrences: number = 0;
   positions: number[] = [0, 0, 0, 0, 0];
   bestPosition: number = 0;
